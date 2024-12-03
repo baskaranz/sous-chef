@@ -6,6 +6,8 @@ import os
 
 from feast import FeatureStore, Feature, FeatureView, ValueType, Field
 from feast.types import Float32, Int64  # Add these imports
+from .registry import SourceRegistry
+from feast.data_format import ParquetFormat
 
 class SousChef:
     """
@@ -86,3 +88,11 @@ class SousChef:
             self.store.apply(list(feature_views.values()))
             
         return feature_views
+
+    def create_data_source(self, config: dict):
+        """Create data source from config"""
+        source_type = config.get('type', 'file').lower()
+        source_class = SourceRegistry.get_source(source_type)
+        source_config = config.copy()
+        source_config.pop('type', None)
+        return source_class(**source_config)
