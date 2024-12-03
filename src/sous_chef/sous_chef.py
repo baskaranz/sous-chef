@@ -24,8 +24,12 @@ class SousChef:
         Args:
             repo_path (str): Path to the Feast feature repository
         """
-        self.store = FeatureStore(repo_path=repo_path)
-    
+        self.repo_path = Path(repo_path)
+        if not (self.repo_path / "feature_repo").exists():
+            raise ValueError("Config directory 'feature_repo' not found. Please create it and place config files inside.")
+        
+        self.store = FeatureStore(repo_path=str(self.repo_path / "feature_repo"))
+
     def create_from_yaml(self, yaml_path: Union[str, Path], apply: bool = True) -> Dict[str, FeatureView]:
         """
         Create feature views from a YAML configuration file.
@@ -37,6 +41,7 @@ class SousChef:
         Returns:
             Dict[str, FeatureView]: Dictionary of created feature views
         """
+        yaml_path = self.repo_path / yaml_path
         if not os.path.exists(yaml_path):
             raise FileNotFoundError(f"Config file not found: {yaml_path}")
             
