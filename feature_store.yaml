@@ -1,0 +1,26 @@
+project: driver_stats_repo
+registry: data/registry.db
+provider: local
+
+offline_store:
+    type: file
+
+online_store:
+    type: sqlite
+    path: data/online_store.db
+
+entities:
+    - name: driver_id
+      join_key: driver_id
+      description: Unique driver identifier
+
+data_sources:
+    driver_source:
+        type: file
+        path: data/driver_stats.parquet      
+        event_timestamp_column: event_timestamp
+        created_timestamp_column: created
+    customer_source:
+        type: file
+        path: data/customer_data.parquet
+        event_timestamp_column: event_timestamp
