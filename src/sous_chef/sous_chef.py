@@ -19,6 +19,12 @@ class SousChef:
         'INT64': Int64,
     }
 
+    REQUIRED_CONFIG_FILES = [
+        'feature_store.yaml',
+        'features.yaml',
+        'data_sources.yaml'
+    ]
+
     def __init__(self, repo_path: str):
         """
         Initialize SousChef with a Feast repository path.
@@ -27,10 +33,23 @@ class SousChef:
             repo_path (str): Path to the Feast feature repository
         """
         self.repo_path = Path(repo_path)
-        if not (self.repo_path / "feature_repo").exists():
+        config_dir = self.repo_path / "feature_repo"
+        
+        if not config_dir.exists():
             raise ValueError("Config directory 'feature_repo' not found. Please create it and place config files inside.")
         
-        self.store = FeatureStore(repo_path=str(self.repo_path / "feature_repo"))
+        # Validate required config files
+        missing_files = []
+        for config_file in self.REQUIRED_CONFIG_FILES:
+            if not (config_dir / config_file).exists():
+                missing_files.append(config_file)
+                
+        if missing_files:
+            raise ValueError(
+                f"Missing required configuration files in feature_repo/: {', '.join(missing_files)}"
+            )
+        
+        self.store = FeatureStore(repo_path=str(config_dir))
 
     def create_from_yaml(self, yaml_path: Union[str, Path], apply: bool = True) -> Dict[str, FeatureView]:
         """
