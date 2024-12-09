@@ -8,6 +8,9 @@ import importlib
 from feast import FeatureStore, Feature, FeatureView, ValueType, Field, Entity
 from feast.types import Float32, Int64
 
+from .errors import SousChefError
+from .validators import ConfigValidator
+
 class SousChef:
     """
     A minimal wrapper for Feast that enables YAML-based feature view creation.
@@ -34,22 +37,38 @@ class SousChef:
         'redis': ['connection_string', 'key_ttl']
     }
 
-    def __init__(self, repo_path: str):
+    def __init__(self, repo_path: str, feast_config: Optional[Dict] = None, check_dirs: bool = True):
         """
-        Initialize SousChef with a Feast repository path.
+        Initialize SousChef with a Feast repository path and optional config.
         
         Args:
             repo_path (str): Path to the Feast feature repository
+            feast_config (Optional[Dict]): Feast configuration dictionary
+            check_dirs (bool): Whether to verify directory structure exists
         """
         self.repo_path = Path(repo_path)
-        if not (self.repo_path / "feature_repo").exists():
-            raise ValueError("Config directory 'feature_repo' not found. Please create it and place config files inside.")
+        feature_repo = self.repo_path / "feature_repo"
         
-        self.store = FeatureStore(repo_path=str(self.repo_path / "feature_repo"))
-        
-        # Initialize data sources from feature_store.yaml
-        self._init_data_sources()
-    
+        if check_dirs:
+            if not feature_repo.exists():
+                feature_repo.mkdir(parents=True)
+                
+            # Write feast config if provided
+            if feast_config:
+                self.offline_store_type = feast_config.get('offline_store', {}).get('type', 'file')
+                with open(feature_repo / "feature_store.yaml", 'w') as f:
+                    yaml.dump(feast_config, f)
+                    
+            self.store = FeatureStore(repo_path=str(feature_repo))
+            
+            # Initialize data sources if config provided
+            if feast_config:
+                self._init_data_sources(feast_config)
+        else:
+            # In test mode, just set attributes without initialization
+            self.store = None
+            self.offline_store_type = None
+
     def _resolve_path(self, path: str) -> str:
         """Resolve path relative to the repository root"""
         abs_path = self.repo_path / path
@@ -60,7 +79,7 @@ class SousChef:
     def _import_source_class(self, source_type: str):
         """Dynamically import the source class"""
         if source_type not in self.SOURCE_TYPE_MAP:
-            raise ValueError(f"Unsupported source type: {source_type}")
+            raise ImportError(f"Source type '{source_type}' is not supported. Available types: {list(self.SOURCE_TYPE_MAP.keys())}")
             
         module_path, class_name = self.SOURCE_TYPE_MAP[source_type]
         try:
@@ -77,12 +96,8 @@ class SousChef:
         allowed_params = self.SOURCE_PARAMS[source_type]
         return {k: v for k, v in config.items() if k in allowed_params}
 
-    def _init_data_sources(self):
-        """Initialize data sources and entities from feature_store.yaml"""
-        config_path = self.repo_path / "feature_repo" / "feature_store.yaml"
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-        
+    def _init_data_sources(self, config: Dict):
+        """Initialize data sources and entities from config"""
         # Initialize entities first
         if 'entities' in config:
             entities = []
@@ -121,13 +136,14 @@ class SousChef:
         """Get the underlying Feast feature store instance"""
         return self.store
 
-    def create_from_yaml(self, yaml_path: Union[str, Path], apply: bool = True) -> Dict[str, FeatureView]:
+    def create_from_yaml(self, yaml_path: Union[str, Path], apply: bool = True, dry_run: bool = False) -> Dict[str, FeatureView]:
         """
         Create feature views from a YAML configuration file.
         
         Args:
-            yaml_path (Union[str, Path]): Path to YAML config file
-            apply (bool): Whether to apply feature views to the feature store
+            yaml_path: Path to YAML config file
+            apply: Whether to apply feature views to the feature store
+            dry_run: If True, validate and return changes without applying
             
         Returns:
             Dict[str, FeatureView]: Dictionary of created feature views
@@ -138,14 +154,24 @@ class SousChef:
             
         with open(yaml_path) as f:
             config = yaml.safe_load(f)
+        
+        # Validate CI safety
+        errors = ConfigValidator.validate_ci_safety(config, self.repo_path)
+        if errors:
+            raise SousChefError("Configuration validation failed", errors)
             
         if 'feature_views' not in config:
             raise ValueError("No feature_views section found in YAML")
-            
+        
+        # Create feature views
         feature_views = {}
         for name, spec in config['feature_views'].items():
-            # Get data source
-            source = self.store.get_data_source(spec['source_name'])
+            source_name = spec['source_name']
+            
+            # Get data source from feature store instead of config
+            source = self.store.get_data_source(source_name)
+            if source is None:
+                raise ValueError(f"Data source '{source_name}' not found")
             
             # Get entity objects
             entity_objects = []
@@ -165,7 +191,7 @@ class SousChef:
             # Create feature view
             feature_view = FeatureView(
                 name=name,
-                entities=entity_objects,  # Use entity objects instead of names
+                entities=entity_objects,
                 ttl=timedelta(days=spec.get('ttl_days', 1)),
                 source=source,
                 schema=schema
@@ -173,7 +199,26 @@ class SousChef:
             
             feature_views[name] = feature_view
             
-        if apply:
+        if apply and not dry_run:
             self.store.apply(list(feature_views.values()))
             
         return feature_views
+
+    def _create_sql_source(self, name: str, config: Dict):
+        """Create SQL-based data source"""
+        source_class = SQLSourceRegistry.get_source_class(self.offline_store_type)
+        
+        if source_class is None:
+            raise ValueError(f"Unsupported SQL source type: {self.offline_store_type}")
+        
+        # Get database/schema from offline store config
+        offline_config = self.store.config.offline_store
+        
+        return source_class(
+            name=name,
+            database=offline_config.get('database'),
+            schema=offline_config.get('schema'),
+            query=config.get('query'),
+            table=config.get('table'),
+            timestamp_field=config['timestamp_field']
+        )
