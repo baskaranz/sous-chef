@@ -1,41 +1,136 @@
-from typing import Optional, List, Type, Dict, Tuple
+from typing import Optional, List, Type, Dict
 from feast.types import Float32, Int64, String
+import re
 
 class SQLSource:
     """Base class for SQL sources"""
-    
-    def infer_schema(self, query: str) -> List[Dict[str, str]]:
-        """Base method for schema inference"""
-        raise NotImplementedError
+
+    def validate_query(self, query: str) -> List[str]:
+        """Validate SQL query syntax"""
+        errors = []
+        query = query.strip().upper()
+        
+        # Allow queries starting with WITH
+        if not (query.startswith('SELECT') or query.startswith('WITH')):
+            errors.append("Query must start with SELECT or WITH")
+            
+        return errors
+
+    def infer_schema(self, query: str) -> List[Dict]:
+        """Infer schema from SQL query"""
+        try:
+            # Basic validation
+            query = query.strip()
+            if not (query.upper().startswith('SELECT') or query.upper().startswith('WITH')):
+                return []
+                
+            # Extract SELECT part
+            select_stmt = self._find_main_select(query)
+            if not select_stmt or 'FROM' not in select_stmt.upper():
+                return []
+                
+            # Get columns
+            select_part = select_stmt[select_stmt.upper().index('SELECT') + 6:]
+            from_idx = select_part.upper().find('FROM')
+            if from_idx == -1 or not (select_part := select_part[:from_idx].strip()):
+                return []
+
+            # Process columns
+            schema = []
+            for col in self._split_columns(select_part):
+                col = col.strip()
+                if '*' in col and 'COUNT(*)' not in col.upper():
+                    continue
+                    
+                # Handle column naming
+                col_upper = col.upper()
+                name = None
+                expr = col_upper
+
+                # Extract alias
+                if ' AS ' in col_upper:
+                    parts = col_upper.split(' AS ')
+                    expr, name = parts[0].strip(), parts[-1].strip().split()[0]
+                    
+                # Default to column reference if no alias
+                if not name:
+                    name = col_upper.split('.')[-1].strip()
+                name = name.strip('"\'').strip()
+                if not name:
+                    continue
+                    
+                # Type inference
+                dtype = (
+                    'INT64' if any(fn in expr for fn in ['COUNT', 'SUM', 'RANK', 'ROW_NUMBER'])
+                    else 'FLOAT' if any(fn in expr for fn in ['AVG', 'PERCENTILE', 'MEDIAN'])
+                    else 'INT64' if 'ZEROIFNULL' in expr and any(agg in expr for agg in ['SUM', 'COUNT'])
+                    else 'FLOAT' if 'ZEROIFNULL' in expr
+                    else 'STRING'
+                )
+                
+                schema.append({'name': name, 'dtype': dtype})
+            
+            return schema
+            
+        except Exception as e:
+            print(f"Error inferring schema: {e}")
+            return []
+
+    def _find_main_select(self, query: str) -> Optional[str]:
+        """Find the main SELECT statement from a query with CTEs"""
+        try:
+            # Normalize whitespace
+            query = ' '.join(query.strip().split())
+            
+            # For WITH queries, find the last SELECT at top level
+            if query.upper().startswith('WITH'):
+                # Count parentheses to track nesting
+                level = 0
+                pos = 0
+                last_select = None
+                
+                while pos < len(query):
+                    if query[pos:pos+6].upper() == 'SELECT' and level == 0:
+                        last_select = pos
+                    elif query[pos] == '(':
+                        level += 1
+                    elif query[pos] == ')':
+                        level -= 1
+                    pos += 1
+                        
+                if last_select is not None:
+                    return query[last_select:]
+                    
+            return query
+            
+        except Exception:
+            return None
+
+    def _split_columns(self, select_part: str) -> List[str]:
+        """Split SELECT columns handling nested expressions"""
+        columns = []
+        current = []
+        parens = 0
+        
+        for char in select_part:
+            if char == '(':
+                parens += 1
+            elif char == ')':
+                parens -= 1
+            elif char == ',' and parens == 0:
+                columns.append(''.join(current).strip())
+                current = []
+                continue
+            current.append(char)
+            
+        if current:
+            columns.append(''.join(current).strip())
+            
+        return columns
 
 class SnowflakeSource(SQLSource):
     """Snowflake SQL source implementation"""
-
-    def extract_features(self, query: str) -> List[str]:
-        """Extract feature names from Snowflake query"""
-        features = []
-        
-        # Normalize query
-        query = ' '.join(query.strip().split())
-        
-        # Split on SELECT to handle CTEs
-        parts = query.upper().split('SELECT')
-        
-        for part in parts[1:]:
-            if 'FROM' not in part:
-                continue
-                
-            select_part = part.split('FROM')[0].strip()
-            
-            # Extract aliases
-            for expr in select_part.split(','):
-                expr = expr.strip()
-                if ' AS ' in expr:
-                    alias = expr.split(' AS ')[-1].strip()
-                    features.append(alias.split()[0].lower())
-                    
-        return list(dict.fromkeys(features))
-        
+    
     def _map_snowflake_type(self, sf_type: str) -> str:
         """Map Snowflake types to Feast types"""
         type_map = {
@@ -48,97 +143,43 @@ class SnowflakeSource(SQLSource):
         }
         return type_map.get(sf_type.upper(), 'STRING')
 
+    def infer_schema(self, query: str) -> List[Dict]:
+        """Infer schema from Snowflake query"""
+        schema = super().infer_schema(query)
+        return [s for s in schema if not s['name'].startswith('SYS_')]
+
 class TeradataSource(SQLSource):
     """Teradata SQL source implementation"""
-    supports_partitioning = True
-
-    def extract_features(self, query: str) -> List[str]:
-        """Extract feature names from Teradata query"""
-        features = []
-        
-        # Normalize query by removing newlines and extra spaces
-        query = ' '.join(query.strip().split())
-        
-        # Split on SELECT to handle subqueries and CTEs
-        parts = query.upper().split('SELECT')
-        
-        # Process each SELECT clause
-        for part in parts[1:]:  # Skip first empty part
-            if 'FROM' not in part:
-                continue
-                
-            select_part = part.split('FROM')[0].strip()
-            
-            # Extract column aliases
-            for expr in select_part.split(','):
-                expr = expr.strip()
-                
-                # Handle window functions and aggregates
-                if 'OVER' in expr:
-                    # Handle complex window function syntax
-                    if ' AS ' in expr:
-                        # Find the last AS clause (handles nested functions)
-                        alias_parts = expr.split(' AS ')
-                        alias = alias_parts[-1].strip()
-                        # Clean up any parentheses or extra tokens
-                        cleaned_alias = alias.split()[0].rstrip(')').lower()
-                        features.append(cleaned_alias)
-                    continue
-                
-                # Regular column aliases
-                if ' AS ' in expr:
-                    alias = expr.split(' AS ')[-1].strip()
-                    features.append(alias.split()[0].lower())
-        
-        # Remove duplicates while preserving order
-        return list(dict.fromkeys(features))
     
+    def infer_schema(self, query: str) -> List[Dict[str, str]]:
+        """Infer schema from Teradata query"""
+        # Use base class schema inference for validation and parsing
+        schema = super().infer_schema(query)
+        # Filter out Teradata system columns
+        return [s for s in schema if not s['name'].startswith('TD_')]
+
     def _map_teradata_type(self, td_type: str) -> str:
         """Map Teradata types to Feast types"""
-        # Extract base type without precision/scale
-        base_type = td_type.split('(')[0].upper()
-        
         type_map = {
             'INTEGER': 'INT64',
             'DECIMAL': 'FLOAT',
-            'NUMBER': 'FLOAT', 
+            'NUMBER': 'FLOAT',
             'FLOAT': 'FLOAT',
             'VARCHAR': 'STRING',
             'DATE': 'STRING',
             'TIMESTAMP': 'STRING'
         }
+        base_type = td_type.split('(')[0].upper()
         return type_map.get(base_type, 'STRING')
-        
-    def infer_schema(self, query: str) -> List[Dict[str, str]]:
-        """Infer schema from Teradata query"""
-        features = self.extract_features(query)
-        schema = []
-        
-        # Extract full expressions for each feature
-        expressions = {}
-        for expr in query.upper().split(','):
-            if ' AS ' in expr:
-                full_expr = expr.split(' AS ')[0].strip()
-                alias = expr.split(' AS ')[1].strip().split()[0].lower()
-                expressions[alias] = full_expr
-        
-        for feature in features:
-            expr = expressions.get(feature, '')
-            
-            # Infer type based on expression
-            if 'COUNT(' in expr:
-                dtype = 'INT64'
-            elif any(agg in expr for agg in ['SUM(', 'AVG(']):
-                dtype = 'FLOAT'
-            else:
-                dtype = 'STRING'
-                
-            schema.append({
-                'name': feature,
-                'dtype': dtype
-            })
-            
-        return schema
+
+    def _infer_type(self, expr: str) -> str:
+        """Infer type from SQL expression"""
+        expr = expr.upper()
+        if any(f in expr for f in ['COUNT(', 'ROW_NUMBER(', 'RANK(']):
+            return 'INT64'
+        elif any(f in expr for f in ['SUM(', 'AVG(', 'MIN(', 'MAX(']):
+            return 'FLOAT'
+        return 'STRING'
 
 class SQLSourceRegistry:
     """Registry for SQL source implementations"""
@@ -147,11 +188,6 @@ class SQLSourceRegistry:
         'snowflake': SnowflakeSource,
         'teradata': TeradataSource
     }
-    
-    @classmethod
-    def is_sql_source(cls, config: Dict) -> bool:
-        """Check if source config is SQL-based"""
-        return 'query' in config and config.get('type', '') in cls._sources
     
     @classmethod
     def get_source_class(cls, provider: str) -> Optional[Type[SQLSource]]:
@@ -180,5 +216,11 @@ class SQLSourceRegistry:
         for field in required_fields:
             if field not in config:
                 errors.append(f"Missing required field: {field}")
+                
+        # Validate query if present
+        if 'query' in config:
+            source_class = cls.get_source_class(provider)()
+            query_errors = source_class.validate_query(config['query'])
+            errors.extend(query_errors)
                 
         return errors

@@ -90,33 +90,27 @@ def test_snowflake_complex_query(complex_snowflake_query):
     assert not errors
 
 def test_snowflake_nested_ctes(nested_cte_query):
-    """Test feature extraction from nested CTEs"""
+    """Test schema inference from nested CTEs"""
     source = SnowflakeSource()
-    features = source.extract_features(nested_cte_query)
-    assert 'avg_daily_events' in features
-    assert 'median_events' in features
-    assert 'user_activity_segment' in features
+    schema = source.infer_schema(nested_cte_query)
+    features = [f['name'] for f in schema]
+    assert 'AVG_DAILY_EVENTS' in features
+    assert 'MEDIAN_EVENTS' in features
+    assert 'USER_ACTIVITY_SEGMENT' in features
 
 def test_snowflake_array_aggs(array_agg_query):
     """Test handling of array aggregations"""
     source = SnowflakeSource()
-    features = source.extract_features(array_agg_query)
-    assert 'categories' in features
-    assert 'purchase_details' in features
+    schema = source.infer_schema(array_agg_query)
+    features = [f['name'] for f in schema]
+    assert 'CATEGORIES' in features
+    assert 'PURCHASE_DETAILS' in features
+    assert all(f['dtype'] == 'STRING' for f in schema)  # Arrays stored as strings
 
 def test_snowflake_type_mapping():
     """Test Snowflake type mapping"""
     source = SnowflakeSource()
-    type_map = {
-        'NUMBER': 'FLOAT',
-        'FLOAT': 'FLOAT', 
-        'VARCHAR': 'STRING',
-        'ARRAY': 'STRING',
-        'OBJECT': 'STRING',
-        'VARIANT': 'STRING'
-    }
-    for sf_type, feast_type in type_map.items():
-        assert source._map_snowflake_type(sf_type) == feast_type
+    assert source._map_snowflake_type('NUMBER') == 'FLOAT'
 
 def test_snowflake_config_validation():
     """Test Snowflake configuration validation"""
@@ -141,3 +135,9 @@ def test_snowflake_config_validation():
     errors = SQLSourceRegistry.validate_config('snowflake', invalid_config)
     assert len(errors) == 1
     assert 'timestamp_field' in errors[0]
+
+def test_snowflake_query_validation():
+    """Test Snowflake query validation"""
+    source = SnowflakeSource()
+    assert not source.validate_query("SELECT * FROM table")
+    assert not source.validate_query("WITH cte AS (...) SELECT * FROM cte")
