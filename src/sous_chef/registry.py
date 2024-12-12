@@ -14,6 +14,7 @@ class SourceRegistry:
                 'file': ('feast', 'FileSource'),
                 'spark': ('feast.infra.offline_stores.contrib.spark_offline_store.spark_source', 'SparkSource'),
                 'teradata': ('feast_teradata', 'TeradataSource'),
+                'spark_sql_emr': ('feast_spark_sql_emr', 'SparkSqlEmrSource'),  # Added Spark SQL (EMR)
                 'nonexistent_source': ('nonexistent_module', 'NonexistentSource'),  # For testing import errors
             }
             

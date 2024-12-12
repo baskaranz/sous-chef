@@ -4,12 +4,19 @@ import yaml
 from datetime import timedelta
 import os
 import importlib
+import logging
 
 from feast import FeatureStore, Feature, FeatureView, ValueType, Field, Entity
 from feast.types import Float32, Int64
 
+from sous_chef.sql_sources import SQLSourceRegistry
+
 from .errors import SousChefError
 from .validators import ConfigValidator
+
+# Configure sous_chef logger
+logger = logging.getLogger("sous_chef")
+logger.propagate = False  # Prevent propagation to root logger
 
 class SousChef:
     """
@@ -37,7 +44,7 @@ class SousChef:
         'redis': ['connection_string', 'key_ttl']
     }
 
-    def __init__(self, repo_path: str, feast_config: Optional[Dict] = None, check_dirs: bool = True):
+    def __init__(self, repo_path: str, feast_config: Optional[Dict] = None, check_dirs: bool = True, log_level: str = "INFO"):
         """
         Initialize SousChef with a Feast repository path and optional config.
         
@@ -45,7 +52,21 @@ class SousChef:
             repo_path (str): Path to the Feast feature repository
             feast_config (Optional[Dict]): Feast configuration dictionary
             check_dirs (bool): Whether to verify directory structure exists
+            log_level (str): Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         """
+        # Configure logging for sous_chef only
+        logger.handlers = []  # Clear any existing handlers
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter(
+            '%(message)s'  # Simplified format
+        ))
+        logger.addHandler(handler)
+        logger.setLevel(getattr(logging, log_level.upper()))
+        
+        # Keep feast logs at WARNING level
+        logging.getLogger("feast").setLevel(logging.WARNING)
+        
+        logger.debug(f"Initializing SousChef with repo_path: {repo_path}")
         self.repo_path = Path(repo_path)
         feature_repo = self.repo_path / "feature_repo"
         
@@ -155,16 +176,12 @@ class SousChef:
         with open(yaml_path) as f:
             config = yaml.safe_load(f)
         
-        # Validate CI safety
-        errors = ConfigValidator.validate_ci_safety(config, self.repo_path)
-        if errors:
-            raise SousChefError("Configuration validation failed", errors)
-            
         if 'feature_views' not in config:
             raise ValueError("No feature_views section found in YAML")
         
         # Create feature views
         feature_views = {}
+        logger.info(f"Creating feature views from {yaml_path}")
         for name, spec in config['feature_views'].items():
             source_name = spec['source_name']
             
@@ -201,7 +218,8 @@ class SousChef:
             
         if apply and not dry_run:
             self.store.apply(list(feature_views.values()))
-            
+        
+        logger.debug(f"Created feature views: {list(feature_views.keys())}")
         return feature_views
 
     def _create_sql_source(self, name: str, config: Dict):

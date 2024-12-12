@@ -45,15 +45,15 @@ def complex_teradata_query():
 
 @pytest.fixture
 def simple_teradata_query():
+    """Simplified query without comments or CTEs"""
     return """
-    SELECT 
-        customer_id,
-        COUNT(*) as order_count,
-        SUM(amount) as total_amount,
-        MAX(order_date) as last_order
-    FROM orders
-    GROUP BY customer_id
-    """
+SELECT 
+    customer_id,
+    COUNT(*) AS order_count,
+    SUM(amount) AS total_amount,
+    MAX(order_date) AS last_order
+FROM orders
+GROUP BY customer_id"""
 
 @pytest.fixture 
 def window_teradata_query():
@@ -72,7 +72,7 @@ def test_teradata_complex_query(complex_teradata_query):
     """Test complex Teradata query validation"""
     config = {
         'query': complex_teradata_query,
-        'timestamp_field': 'event_timestamp'
+        'timestamp_field': 'transaction_date'
     }
     errors = SQLSourceRegistry.validate_config('teradata', config)
     assert not errors
@@ -90,10 +90,12 @@ def test_teradata_query_features(complex_teradata_query):
     """Test Teradata schema inference"""
     source = TeradataSource()
     schema = source.infer_schema(complex_teradata_query)
-    features = [f['name'] for f in schema]
-    assert 'TRANSACTION_COUNT' in features
-    assert 'DAILY_AMOUNT' in features
-    assert 'CUSTOMER_RANK' in features
+    features = {f['name'] for f in schema}
+    expected = {
+        'DATE_KEY', 'CUSTOMER_ID', 'SEGMENT_CODE',
+        'TRANSACTION_COUNT', 'DAILY_AMOUNT', 'CUSTOMER_RANK'
+    }
+    assert features == expected
 
 def test_teradata_simple_query(simple_teradata_query):
     """Test schema inference from simple query"""
@@ -108,25 +110,40 @@ def test_teradata_window_functions(window_teradata_query):
     """Test schema inference from window functions"""
     source = TeradataSource()
     schema = source.infer_schema(window_teradata_query)
-    features = [f['name'] for f in schema]
-    assert 'MOVING_AVG_AMOUNT' in features
-    assert 'AMOUNT_RANK' in features
+    features = {f['name'] for f in schema}
+    expected = {'CUSTOMER_ID', 'ORDER_DATE', 'AMOUNT', 
+                'MOVING_AVG_AMOUNT', 'AMOUNT_RANK'}
+    assert features == expected
+    
+    # Check types are correctly inferred
+    types = {f['name']: f['dtype'] for f in schema}
+    assert types['AMOUNT_RANK'] == 'INT64'  # RANK() returns INT64
+    assert types['MOVING_AVG_AMOUNT'] == 'FLOAT'  # AVG() returns FLOAT
 
 def test_teradata_type_mapping():
     """Test Teradata type mapping"""
     source = TeradataSource()
     assert source._map_teradata_type('INTEGER') == 'INT64'
     assert source._map_teradata_type('DECIMAL(10,2)') == 'FLOAT'
+    assert source._map_teradata_type('VARCHAR(255)') == 'STRING'
+    assert source._map_teradata_type('DATE') == 'STRING'
+    assert source._map_teradata_type('TIMESTAMP') == 'STRING'
+    assert source._map_teradata_type('NUMBER') == 'FLOAT'
+    assert source._map_teradata_type('UNKNOWN_TYPE') == 'STRING'
 
 def test_teradata_invalid_query():
     """Test handling of invalid queries"""
     source = TeradataSource()
-    invalid_query = "INVALID SQL SYNTAX"
-    schema = source.infer_schema(invalid_query)
-    assert schema == []
+    with pytest.raises(ValueError, match="Query must start with SELECT"):
+        source.infer_schema("INVALID SQL SYNTAX")
+    with pytest.raises(ValueError, match="Query must contain FROM clause"):  # Updated error message
+        source.infer_schema("SELECT FROM")
 
 def test_teradata_query_validation():
     """Test Teradata query validation"""
     source = TeradataSource()
-    assert not source.validate_query("SELECT * FROM table")
-    assert not source.validate_query("WITH RECURSIVE dates AS (...)")
+    # Basic valid queries should pass
+    assert source.validate_query("SELECT customer_id FROM customers") == True  # Added explicit True comparison
+    # Invalid queries should fail
+    assert not source.validate_query("SELECT FROM")
+    assert not source.validate_query("INSERT INTO table")

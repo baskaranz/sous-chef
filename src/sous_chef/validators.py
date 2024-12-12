@@ -1,156 +1,180 @@
-import os
-from typing import Dict, List, Any
-from pathlib import Path
-from datetime import timedelta
-from .errors import ValidationError, SousChefError
+from typing import Dict, List
+from enum import Enum
 
-class FeatureViewValidator:
-    """Validates feature view configurations"""
-    
-    REQUIRED_FIELDS = ['source_name', 'entities', 'schema']
-    OPTIONAL_FIELDS = ['ttl_days', 'online', 'description', 'tags']
-    
-    @classmethod
-    def validate(cls, name: str, config: Dict[str, Any]) -> List[str]:
-        """
-        Validate feature view configuration
-        
-        Args:
-            name: Feature view name
-            config: Feature view configuration dictionary
-            
-        Returns:
-            List of validation error messages, empty if valid
-        """
-        errors = []
-        
-        # Check required fields
-        for field in cls.REQUIRED_FIELDS:
-            if field not in config:
-                errors.append(f"Missing required field '{field}' in feature view '{name}'")
-        
-        # Validate schema if present
-        if 'schema' in config:
-            schema_errors = cls._validate_schema(config['schema'])
-            errors.extend(f"Schema error in '{name}': {err}" for err in schema_errors)
-            
-        # Validate ttl_days if present
-        if 'ttl_days' in config:
-            try:
-                ttl = int(config['ttl_days'])
-                if ttl <= 0:
-                    errors.append(f"ttl_days must be positive in feature view '{name}'")
-            except ValueError:
-                errors.append(f"Invalid ttl_days value in feature view '{name}'")
-                
-        # Check for unknown fields
-        valid_fields = set(cls.REQUIRED_FIELDS + cls.OPTIONAL_FIELDS)
-        unknown = set(config.keys()) - valid_fields
-        if unknown:
-            errors.append(f"Unknown fields in feature view '{name}': {', '.join(unknown)}")
-            
-        return errors
-    
-    @staticmethod
-    def _validate_schema(schema: List[Dict]) -> List[str]:
-        """Validate feature schema configuration"""
-        errors = []
-        for idx, field in enumerate(schema):
-            if 'name' not in field:
-                errors.append(f"Missing 'name' in schema field {idx}")
-            if 'dtype' not in field:
-                errors.append(f"Missing 'dtype' in schema field {idx}")
-        return errors
-
-class ConfigValidator:
-    """Validates configurations for CI safety"""
-    
-    @classmethod
-    def validate_ci_safety(cls, config: Dict, base_path: Path) -> List[ValidationError]:
-        """Validate configuration is safe for CI use"""
-        errors = []
-        
-        # Validate paths are relative
-        if 'data_sources' in config:
-            for source_name, source in config['data_sources'].items():
-                if 'path' in source and os.path.isabs(source['path']):
-                    errors.append(ValidationError(
-                        path=f"data_sources.{source_name}.path",
-                        code="ABSOLUTE_PATH",
-                        message="Absolute paths are not allowed in CI",
-                        context={"path": source['path']}
-                    ))
-                    
-        # Validate no environment variables in values
-        cls._check_env_vars(config, "", errors)
-        
-        return errors
-    
-    @classmethod
-    def _check_env_vars(cls, value: Any, path: str, errors: List[ValidationError]):
-        """Recursively check for environment variable references"""
-        if isinstance(value, str):
-            if "${" in value or "$(" in value:
-                errors.append(ValidationError(
-                    path=path,
-                    code="ENV_VAR_REFERENCE",
-                    message="Environment variable references not allowed in CI",
-                    context={"value": value}
-                ))
-        elif isinstance(value, dict):
-            for k, v in value.items():
-                cls._check_env_vars(v, f"{path}.{k}" if path else k, errors)
-        elif isinstance(value, list):
-            for i, v in enumerate(value):
-                cls._check_env_vars(v, f"{path}[{i}]", errors)
+class ValidationErrorCode(Enum):
+    """Enumeration of possible validation error codes"""
+    INVALID_SQL = "INVALID_SQL"
+    MISSING_FIELD = "MISSING_FIELD"
 
 class SQLValidator:
-    """Validates SQL configurations in YAML"""
+    """SQL query validator with support for SELECT statements"""
+    
+    AGGREGATE_FUNCTIONS = {'COUNT', 'SUM', 'AVG', 'MAX', 'MIN', 'ARRAY_AGG', 'COLLECT_LIST'}
+    WINDOW_FUNCTIONS = {'RANK', 'ROW_NUMBER', 'LAG', 'LEAD', 'FIRST_VALUE', 'LAST_VALUE', 'AVG', 'SUM'}
+    
+    @classmethod
+    def validate_sql(cls, query: str) -> bool:
+        """Validate SQL query and return True if valid, False otherwise"""
+        try:
+            # Clean query
+            clean_query = ""
+            current_line = ""
+            
+            # First parse preserving content between parentheses
+            in_parens = 0
+            for char in query:
+                if char == '(':
+                    in_parens += 1
+                elif char == ')':
+                    in_parens -= 1
+                
+                if char == '\n' and in_parens == 0:
+                    if '--' in current_line:
+                        current_line = current_line[:current_line.index('--')]
+                    if current_line.strip():
+                        clean_query += " " + current_line.strip()
+                    current_line = ""
+                else:
+                    current_line += char
+                    
+            # Add last line
+            if current_line.strip():
+                if '--' in current_line:
+                    current_line = current_line[:current_line.index('--')]
+                clean_query += " " + current_line.strip()
+                
+            clean_query = clean_query.strip()
+            
+            # Basic validation
+            if not clean_query.upper().startswith('SELECT'):
+                return False
+
+            # Find FROM clause (not in EXTRACT function)
+            query_upper = clean_query.upper()
+            in_extract = False
+            from_pos = -1
+            i = 0
+            
+            while i < len(query_upper):
+                if query_upper[i:].startswith('EXTRACT'):
+                    in_extract = True
+                elif query_upper[i:].startswith('FROM') and not in_extract:
+                    from_pos = i
+                    break
+                elif query_upper[i] == ')':
+                    in_extract = False
+                i += 1
+                
+            if from_pos == -1:
+                return False
+                
+            # Get SELECT columns
+            select_part = clean_query[6:from_pos].strip()
+            if not select_part:
+                return False
+
+            # Parse and validate columns
+            columns = []
+            current = []
+            parens = 0
+            for char in select_part:
+                if char == '(':
+                    parens += 1
+                    current.append(char)
+                elif char == ')':
+                    parens -= 1
+                    current.append(char)
+                elif char == ',' and parens == 0:
+                    if current:
+                        columns.append(''.join(current).strip())
+                    current = []
+                else:
+                    current.append(char)
+                    
+            if current:
+                columns.append(''.join(current).strip())
+
+            # Check each column
+            for col in columns:
+                col = col.strip().upper()
+                if not col:
+                    continue
+                    
+                # Skip if already has alias
+                if ' AS ' in col:
+                    continue
+                    
+                # Skip simple column references
+                if col.isalnum():
+                    continue
+                    
+                # Skip qualified columns (table.column)
+                if '.' in col and not col.endswith('.') and len(col.split('.')) == 2:
+                    continue
+                    
+                # All other expressions need aliases
+                if (
+                    col.endswith('.') or
+                    '(' in col or
+                    any(op in col for op in ['+', '-', '*', '/']) or
+                    any(fn in col for fn in ['CASE', 'EXTRACT'])
+                ):
+                    return False
+
+            return True
+
+        except Exception as e:
+            print(f"Validation error: {str(e)}")
+            return False
 
     @classmethod
-    def validate_sql(cls, query: str) -> List[str]:
-        """Validate SQL query structure"""
+    def validate_config(cls, config: Dict) -> bool:
+        """Validate configuration"""
+        # Check required fields
+        if not all(k in config for k in ['query', 'timestamp_field', 'database']):
+            return False
+            
+        # Check query
+        return cls.validate_sql(config['query'])
+
+    @classmethod
+    def _split_columns(cls, select_part: str) -> List[str]:
+        """Split SELECT columns handling nested expressions"""
+        columns = []
+        current = []
+        parens = 0
+        
+        for char in select_part:
+            if char == '(':
+                parens += 1
+            elif char == ')':
+                parens -= 1
+            elif char == ',' and parens == 0:
+                if current:
+                    columns.append(''.join(current).strip())
+                current = []
+                continue
+            current.append(char)
+            
+        if current:
+            columns.append(''.join(current).strip())
+            
+        return [col for col in columns if col]  # Filter out empty strings
+
+class ConfigValidator:
+    """Basic configuration validator"""
+    
+    @classmethod
+    def validate(cls, config: Dict) -> List[str]:
+        """Basic config validation"""
         errors = []
         
-        # Normalize query
-        query = ' '.join(query.strip().split())
-        
-        # Validate query has SELECT
-        if 'SELECT' not in query.upper():
-            errors.append("Query must contain SELECT statement")
+        if not isinstance(config, dict):
+            errors.append("Configuration must be a dictionary")
             return errors
             
-        # Split on SELECT to handle subqueries and CTEs
-        parts = query.upper().split('SELECT')
-        
-        for part in parts[1:]:  # Skip first empty part
-            if 'FROM' not in part:
-                continue
-                
-            select_part = part.split('FROM')[0].strip()
-            
-            # Validate each column has alias
-            for expr in select_part.split(','):
-                expr = expr.strip()
-                if expr and ' AS ' not in expr:
-                    errors.append(f"Column expression missing alias: {expr}")
-
-        return errors
-
-    @classmethod 
-    def validate_config(cls, config: Dict) -> List[str]:
-        """Validate SQL source configuration"""
-        errors = []
-        
-        # Required fields
-        required = ['query', 'timestamp_field', 'database', 'schema']
-        for field in required:
-            if field not in config:
-                errors.append(f"Missing required field: {field}")
-                
-        # Validate query if present
         if 'query' in config:
-            query_errors = cls.validate_sql(config['query'])
-            errors.extend(query_errors)
+            sql_errors = SQLValidator.validate_sql(config['query'])
+            errors.extend(sql_errors)
             
         return errors

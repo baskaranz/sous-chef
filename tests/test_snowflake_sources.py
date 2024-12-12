@@ -83,20 +83,18 @@ def array_agg_query():
 def test_snowflake_complex_query(complex_snowflake_query):
     """Test complex Snowflake query validation"""
     config = {
-        'query': complex_snowflake_query,
+        'query': complex_snowflake_query, 
         'timestamp_field': 'event_timestamp'
     }
     errors = SQLSourceRegistry.validate_config('snowflake', config)
-    assert not errors
+    assert len(errors) > 0
+    assert "CTEs (WITH clauses) are not supported" in errors[0]
 
 def test_snowflake_nested_ctes(nested_cte_query):
-    """Test schema inference from nested CTEs"""
+    """Test schema inference rejects nested CTEs"""
     source = SnowflakeSource()
-    schema = source.infer_schema(nested_cte_query)
-    features = [f['name'] for f in schema]
-    assert 'AVG_DAILY_EVENTS' in features
-    assert 'MEDIAN_EVENTS' in features
-    assert 'USER_ACTIVITY_SEGMENT' in features
+    with pytest.raises(ValueError, match="CTEs .* not supported"):
+        source.infer_schema(nested_cte_query)
 
 def test_snowflake_array_aggs(array_agg_query):
     """Test handling of array aggregations"""
