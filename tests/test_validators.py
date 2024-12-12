@@ -1,5 +1,5 @@
 import pytest
-from sous_chef.validators import SQLValidator
+from sous_chef.validators import ConfigValidator, SQLValidator
 
 def test_sql_validation():
     """Test SQL validation"""
@@ -80,3 +80,90 @@ def test_sql_config_validation():
     result = SQLValidator.validate_config(valid_config)
     print(f"Validation result: {result}")
     assert result, "Expected validation success"
+
+def test_validate_feature_service_config():
+    """Test complete feature service configuration validation"""
+    config = {
+        'feature_views': {
+            'view1': {
+                'source_name': 'source1',
+                'entities': ['entity1'],
+                'schema': [{'name': 'feature1', 'dtype': 'INT64'}]
+            },
+            'view2': {
+                'source_name': 'source2',
+                'entities': ['entity1'],
+                'schema': [{'name': 'feature2', 'dtype': 'FLOAT'}]
+            }
+        },
+        'feature_services': {
+            'service1': {
+                'features': ['view1', 'view2'],
+                'description': 'Test service',
+                'tags': {
+                    'owner': 'data_team',
+                    'version': '1.0'
+                }
+            }
+        }
+    }
+    
+    errors = ConfigValidator.validate(config)
+    assert len(errors) == 0, f"Unexpected validation errors: {errors}"
+
+def test_validate_feature_service_fields():
+    """Test feature service field validation"""
+    invalid_configs = [
+        # Missing features list
+        {
+            'feature_views': {'view1': {'source_name': 'source1', 'entities': ['entity1'], 'schema': []}},
+            'feature_services': {'service1': {'description': 'Test'}}
+        },
+        # Empty features list
+        {
+            'feature_views': {'view1': {'source_name': 'source1', 'entities': ['entity1'], 'schema': []}},
+            'feature_services': {'service1': {'features': [], 'description': 'Test'}}
+        },
+        # Invalid tags format
+        {
+            'feature_views': {'view1': {'source_name': 'source1', 'entities': ['entity1'], 'schema': []}},
+            'feature_services': {'service1': {'features': ['view1'], 'tags': 'invalid'}}
+        }
+    ]
+    
+    expected_errors = [
+        "Feature service 'service1' missing required field: features",
+        "Feature service 'service1' features list cannot be empty",
+        "Feature service 'service1' tags must be a dictionary"
+    ]
+    
+    for config, expected_error in zip(invalid_configs, expected_errors):
+        errors = ConfigValidator.validate(config)
+        assert any(expected_error in error for error in errors), f"Expected error '{expected_error}' not found in {errors}"
+
+def test_validate_invalid_feature_service():
+    config = {
+        'feature_services': {
+            'service1': {
+                'description': 'Missing features field'
+            }
+        }
+    }
+    
+    errors = ConfigValidator.validate(config)
+    expected_error = "Feature service 'service1' missing required field: features"
+    assert any(expected_error in error for error in errors), f"Expected error '{expected_error}' not found in {errors}"
+
+def test_validate_nonexistent_feature_views():
+    config = {
+        'feature_services': {
+            'service1': {
+                'features': ['nonexistent_view']
+            }
+        },
+        'feature_views': {}
+    }
+    
+    errors = ConfigValidator.validate(config)
+    expected_error = "Feature service 'service1' references non-existent feature view: nonexistent_view"
+    assert any(expected_error in error for error in errors), f"Expected error '{expected_error}' not found in {errors}"

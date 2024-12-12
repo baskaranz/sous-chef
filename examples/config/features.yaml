@@ -19,3 +19,12 @@ feature_views:
         dtype: FLOAT
       - name: transaction_count
         dtype: INT64
+
+feature_services:
+  customer_insights:
+    description: Combined customer statistics service
+    features:
+      - customer_stats
+    tags:
+      owner: data_team
+      version: '1.0'

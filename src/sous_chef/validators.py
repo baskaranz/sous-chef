@@ -177,4 +177,44 @@ class ConfigValidator:
             sql_errors = SQLValidator.validate_sql(config['query'])
             errors.extend(sql_errors)
             
+        # Validate feature views section
+        if 'feature_views' in config:
+            for name, view_config in config['feature_views'].items():
+                if not isinstance(view_config, dict):
+                    errors.append(f"Feature view '{name}' configuration must be a dictionary")
+                    continue
+                    
+                required_fields = {'source_name', 'entities', 'schema'}
+                missing = required_fields - set(view_config.keys())
+                if missing:
+                    errors.append(f"Feature view '{name}' missing required fields: {missing}")
+                    
+        # Validate feature services section
+        if 'feature_services' in config:
+            for name, service_config in config['feature_services'].items():
+                if not isinstance(service_config, dict):
+                    errors.append(f"Feature service '{name}' configuration must be a dictionary")
+                    continue
+                    
+                # Check required fields
+                if 'features' not in service_config:
+                    errors.append(f"Feature service '{name}' missing required field: features")
+                else:
+                    # Validate features list
+                    if not isinstance(service_config['features'], list):
+                        errors.append(f"Feature service '{name}' features must be a list")
+                    elif not service_config['features']:  # Check for empty list
+                        errors.append(f"Feature service '{name}' features list cannot be empty")
+                
+                # Validate tags if present
+                if 'tags' in service_config:
+                    if not isinstance(service_config['tags'], dict):
+                        errors.append(f"Feature service '{name}' tags must be a dictionary")
+                    
+                # Check if referenced feature views exist
+                if 'features' in service_config and isinstance(service_config['features'], list):
+                    for view_name in service_config['features']:
+                        if view_name not in config.get('feature_views', {}):
+                            errors.append(f"Feature service '{name}' references non-existent feature view: {view_name}")
+                            
         return errors

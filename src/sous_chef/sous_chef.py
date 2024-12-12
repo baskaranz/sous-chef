@@ -6,7 +6,7 @@ import os
 import importlib
 import logging
 
-from feast import FeatureStore, Feature, FeatureView, ValueType, Field, Entity
+from feast import FeatureStore, Feature, FeatureView, ValueType, Field, Entity, FeatureService
 from feast.types import Float32, Int64
 
 from sous_chef.sql_sources import SQLSourceRegistry
@@ -157,17 +157,17 @@ class SousChef:
         """Get the underlying Feast feature store instance"""
         return self.store
 
-    def create_from_yaml(self, yaml_path: Union[str, Path], apply: bool = True, dry_run: bool = False) -> Dict[str, FeatureView]:
+    def create_from_yaml(self, yaml_path: Union[str, Path], apply: bool = True, dry_run: bool = False) -> Dict[str, Union[FeatureView, FeatureService]]:
         """
-        Create feature views from a YAML configuration file.
+        Create feature views and services from a YAML configuration file.
         
         Args:
             yaml_path: Path to YAML config file
-            apply: Whether to apply feature views to the feature store
+            apply: Whether to apply to the feature store
             dry_run: If True, validate and return changes without applying
             
         Returns:
-            Dict[str, FeatureView]: Dictionary of created feature views
+            Dict[str, Union[FeatureView, FeatureService]]: Dictionary of created objects
         """
         yaml_path = self.repo_path / yaml_path
         if not os.path.exists(yaml_path):
@@ -216,11 +216,32 @@ class SousChef:
             
             feature_views[name] = feature_view
             
-        if apply and not dry_run:
-            self.store.apply(list(feature_views.values()))
+        created_objects = feature_views.copy()
         
-        logger.debug(f"Created feature views: {list(feature_views.keys())}")
-        return feature_views
+        # Create feature services if specified
+        if 'feature_services' in config:
+            logger.info("Creating feature services")
+            for name, spec in config['feature_services'].items():
+                features = []
+                for view_name in spec['features']:
+                    if view_name not in feature_views:
+                        raise ValueError(f"Feature view '{view_name}' not found")
+                    features.append(feature_views[view_name])
+                
+                service = FeatureService(
+                    name=name,
+                    features=features,
+                    description=spec.get('description', ''),
+                    tags=spec.get('tags', {})
+                )
+                
+                created_objects[name] = service
+                
+        if apply and not dry_run:
+            self.store.apply(list(created_objects.values()))
+        
+        logger.debug(f"Created objects: {list(created_objects.keys())}")
+        return created_objects
 
     def _create_sql_source(self, name: str, config: Dict):
         """Create SQL-based data source"""

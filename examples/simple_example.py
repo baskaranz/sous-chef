@@ -32,13 +32,13 @@ chef = SousChef(
     log_level="INFO"  # Set to DEBUG for more verbose output
 )
 
-# Create feature views from YAML
-feature_views = chef.create_from_yaml("config/features.yaml")
+# Create feature views and services from YAML
+objects = chef.create_from_yaml("config/features.yaml")
 
 # Get feature store
 store = chef.feature_store
 
-# Example: Get features for specific customers
+# Example: Get features using feature service
 entity_df = pd.DataFrame({
     "customer_id": [1, 2],
     "event_timestamp": [
@@ -47,14 +47,11 @@ entity_df = pd.DataFrame({
     ],
 })
 
-# Get historical features
-entity_df = store.get_historical_features(
+# Get historical features using feature service
+features = store.get_historical_features(
     entity_df=entity_df,
-    features=[
-        "customer_stats:amount",
-        "customer_stats:transaction_count",
-    ],
+    features=store.get_feature_service("customer_insights")
 ).to_df()
 
-logger.info("\nRetrieved Features:")
-logger.info("\n%s", entity_df.to_string())
+logger.info("\nRetrieved Features from Feature Service:")
+logger.info("\n%s", features.to_string())
