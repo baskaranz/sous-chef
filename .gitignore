@@ -12,3 +12,7 @@ venv/
 .pytest_cache/
 .coverage
 data/*.db
+
+# Ignore feature store database files
+examples/**/data/online_store.db
+examples/**/data/registry.db
