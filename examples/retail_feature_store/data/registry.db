@@ -1,82 +1,0 @@
-
-Œ
-l
-customer"customer_idB
-ownerretail_analyticsB
-domainretailB
-version1.0Jretail_feature_store
-Øªûº˜ºÃ†¡ÃşºÀ¹ºƒ
-K
-+
-__dummy"
-__dummy_idJretail_feature_store
-Ì°öº¸·Ú¡Ãşºè¾ …1"$24a64dc6-f98d-4c9d-9148-7b5a63a68d51*¡Ãşº€û³…2 
-ÿ
-customer_featuresretail_feature_storecustomer"
-total_purchases
-ownerretail_analytics
-domainretail
-data_qualityverified$
-descriptionTotal purchase amount
-version1.0"
-purchase_frequency
-ownerretail_analytics
-domainretail
-data_qualityverified!
-descriptionPurchase frequency
-version1.0"‘
-customer_segment
-ownerretail_analytics
-domainretail
-data_qualityverified$
-descriptionCustomer segment code
-version1.0*
-ownerretail_analytics*
-domainretail*
-teamcustomer_insights*
-data_qualityverified*
-version1.02€ÎÚ:ƒevent_timestampZdb/Users/baskaran/Work/sous-chef-v2/sous-chef/examples/retail_feature_store/data/retail_data.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢retail_transactionsÂ
-ownerretail_analyticsÂ
-domainretailÂ
-version1.0@b
-customer_id
-Øªûº˜›ñˆØªûº˜›ñˆ:ï
-Î
-customer_insightsretail_feature_storeŸ
-customer_features
-total_purchases
-ownerretail_analytics
-domainretail
-data_qualityverified$
-descriptionTotal purchase amount
-version1.0
-purchase_frequency
-ownerretail_analytics
-domainretail
-data_qualityverified!
-descriptionPurchase frequency
-version1.0‘
-customer_segment
-ownerretail_analytics
-domainretail
-data_qualityverified$
-descriptionCustomer segment code
-version1.0BÏevent_timestampZdb/Users/baskaran/Work/sous-chef-v2/sous-chef/examples/retail_feature_store/data/retail_data.parquet¢retail_transactionsÂ
-ownerretail_analyticsÂ
-domainretailÂ
-version1.0"
-ownerretail_analytics"
-domainretail"
-status
-production"
-
-SLAT+1"
-version1.0*"Customer behavior analysis service
-ØªûºĞ—úˆ¡Ãşºà£…bševent_timestampZdb/Users/baskaran/Work/sous-chef-v2/sous-chef/examples/retail_feature_store/data/retail_data.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢retail_transactionsªretail_feature_storeÂ
-ownerretail_analyticsÂ
-domainretailÂ
-version1.0z<
-retail_feature_store$d90c0834-092e-427c-9f9e-4416410c3a4eŠ6
-
-retail_feature_store
-Ì°öº ïÊÌ°öº ïÊ
