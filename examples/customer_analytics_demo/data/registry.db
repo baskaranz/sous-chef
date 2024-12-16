@@ -1,17 +1,17 @@
 
-…
+„
 e
 customer"customer_idB
 owner	data_teamB
 domaincustomerB
-version1.0Jcustomer_analytics
-«àıº€¦èá•Ãşº°¥¼ë
-I
+version1.0Jcustomer_analytics
+«àıº€¦èá”õşºè­­N
+H
 )
 __dummy"
-__dummy_idJcustomer_analytics
-«àıºàúëá•Ãşº¸Êí1"$8ef1f4e2-d661-4d05-8043-1af3c25abaa9*•Ãşº€ıí2ø
-×
+__dummy_idJcustomer_analytics
+«àıºàúëá”õşº¨Ø„P1"$9335bb57-f179-46bf-8dd7-1abeac76ba12*”õşº ş”P2ï
+Ï
 customer_featurescustomer_analyticscustomer"
 total_purchases
 owner	data_team
@@ -29,14 +29,14 @@ __dummy_idJcustomer_analytics
 domaincustomer*
 teamcustomer_insights*
 data_qualityverified*
-version1.02€ÎÚ:ÿevent_timestampZig/Users/baskaran/Work/sous-chef-v2/sous-chef/examples/customer_analytics_demo/data/customer_data.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢customer_sourceÂ
+version1.02€ÎÚ:÷event_timestampZa_/Users/baskaran/Work/scv3/sous-chef/examples/customer_analytics_demo/data/customer_data.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢customer_sourceÂ
 owner	data_teamÂ
 domaincustomerÂ
 version1.0@b
-customer_id
-«àıºÈÛòã«àıºÈÛòã:µ
-”
-customer_insightscustomer_analyticsş
+customer_id
+«àıºÈÛòã”õşºÈÅëO:¬
+Œ
+customer_insightscustomer_analyticsö
 customer_features
 total_purchases
 owner	data_team
@@ -49,7 +49,7 @@ __dummy_idJcustomer_analytics
 data_qualityverified
 freshness_sla24h"
 descriptionNumber of purchases
-version1.0BËevent_timestampZig/Users/baskaran/Work/sous-chef-v2/sous-chef/examples/customer_analytics_demo/data/customer_data.parquet¢customer_sourceÂ
+version1.0BÃevent_timestampZa_/Users/baskaran/Work/scv3/sous-chef/examples/customer_analytics_demo/data/customer_data.parquet¢customer_sourceÂ
 owner	data_teamÂ
 domaincustomerÂ
 version1.0"
@@ -59,8 +59,8 @@ production"
 tiergold"
 
 SLAT+1"
-version1.0*Basic customer metrics
-«àıºèâúã•Ãşº°šíb”event_timestampZig/Users/baskaran/Work/sous-chef-v2/sous-chef/examples/customer_analytics_demo/data/customer_data.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢customer_sourceªcustomer_analyticsÂ
+version1.0*Basic customer metrics
+«àıºèâúã”õşº ¨‡PbŒevent_timestampZa_/Users/baskaran/Work/scv3/sous-chef/examples/customer_analytics_demo/data/customer_data.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢customer_sourceªcustomer_analyticsÂ
 owner	data_teamÂ
 domaincustomerÂ
 version1.0z:

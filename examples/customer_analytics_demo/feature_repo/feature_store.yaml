@@ -1,8 +1,8 @@
 offline_store:
   type: file
 online_store:
-  path: /Users/baskaran/Work/sous-chef-v2/sous-chef/examples/customer_analytics_demo/data/online_store.db
+  path: /Users/baskaran/Work/scv3/sous-chef/examples/customer_analytics_demo/data/online_store.db
   type: sqlite
 project: customer_analytics
 provider: local
-registry: /Users/baskaran/Work/sous-chef-v2/sous-chef/examples/customer_analytics_demo/data/registry.db
+registry: /Users/baskaran/Work/scv3/sous-chef/examples/customer_analytics_demo/data/registry.db
