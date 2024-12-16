@@ -1,0 +1,66 @@
+# Retail domain feature definitions
+entities:
+  - name: customer
+    join_key: customer_id
+    tags:
+      owner: retail_analytics
+      version: '1.0'
+      domain: retail
+
+data_sources:
+  retail_transactions:
+    type: file
+    path: retail_data.parquet  # Will be updated to absolute path at runtime
+    timestamp_field: event_timestamp
+    tags:
+      owner: retail_analytics
+      version: '1.0'
+      domain: retail
+
+feature_views:
+  customer_features:
+    source_name: retail_transactions
+    entities: [customer]
+    ttl_days: 90
+    schema:
+      - name: total_purchases
+        dtype: FLOAT
+        tags:
+          owner: retail_analytics
+          version: '1.0'
+          description: Total purchase amount
+          data_quality: verified
+          domain: retail
+      - name: purchase_frequency
+        dtype: FLOAT
+        tags:
+          owner: retail_analytics
+          version: '1.0'
+          description: Purchase frequency
+          data_quality: verified
+          domain: retail
+      - name: customer_segment
+        dtype: INT64
+        tags:
+          owner: retail_analytics
+          version: '1.0'
+          description: Customer segment code
+          data_quality: verified
+          domain: retail
+    tags:
+      owner: retail_analytics
+      version: '1.0'
+      team: customer_insights
+      domain: retail
+      data_quality: verified
+
+feature_services:
+  customer_insights:
+    features: [customer_features]
+    description: Customer behavior analysis service
+    tags:
+      owner: retail_analytics
+      version: '1.0'
+      status: production
+      SLA: T+1
+      domain: retail

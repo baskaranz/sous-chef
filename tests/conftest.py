@@ -4,9 +4,12 @@ import yaml
 from feast import FeatureStore
 
 @pytest.fixture
-def test_repo(tmp_path):
-    """Create a temporary test repository"""
+def sample_repo_path(tmp_path):
+    """Create a sample repository structure for tests"""
     repo_path = tmp_path / "test_repo"
+    repo_path.mkdir()
+    (repo_path / "feature_repo").mkdir()  # Create feature_repo instead of config
+    (repo_path / "data").mkdir()
     return repo_path
 
 @pytest.fixture

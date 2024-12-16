@@ -1,0 +1,30 @@
+metadata_rules:
+  required_tags:
+    global:  # Applied to all entities
+      - owner
+      - version
+    feature_view:
+      - domain
+      - team
+    feature:
+      - description
+      - data_quality
+    feature_service:
+      - status
+      - SLA
+      
+  optional_tags:
+    global:
+      - description
+      - domain
+      - team
+      - status
+      - SLA
+      - data_quality
+      - update_frequency
+      - source_system
+      - data_owner
+      - tier
+      - privacy_level
+      - freshness_sla
+      - validation_rules

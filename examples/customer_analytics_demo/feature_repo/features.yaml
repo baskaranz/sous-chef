@@ -1,0 +1,57 @@
+entities:
+  - name: customer
+    join_key: customer_id
+    tags:
+      owner: data_team
+      version: '1.0'
+      domain: customer
+
+data_sources:
+  customer_source:
+    type: file
+    path: data/customer_data.parquet
+    timestamp_field: event_timestamp
+    tags:
+      owner: data_team
+      version: '1.0'
+      domain: customer
+
+feature_views:
+  customer_features:
+    source_name: customer_source
+    entities: [customer]
+    ttl_days: 90
+    schema:
+      - name: total_purchases
+        dtype: FLOAT
+        tags:
+          owner: data_team
+          version: '1.0'
+          description: Total purchase amount
+          freshness_sla: "24h"
+          data_quality: verified  # Added required tag
+      - name: purchase_count
+        dtype: INT64
+        tags:
+          owner: data_team
+          version: '1.0'
+          description: Number of purchases
+          freshness_sla: "24h"
+          data_quality: verified  # Added required tag
+    tags:
+      owner: data_team
+      version: '1.0'
+      team: customer_insights
+      domain: customer
+      data_quality: verified
+
+feature_services:
+  customer_insights:
+    features: [customer_features]
+    description: Basic customer metrics
+    tags:
+      owner: data_team
+      version: '1.0'
+      status: production
+      SLA: T+1
+      tier: gold

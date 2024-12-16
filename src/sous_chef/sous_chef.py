@@ -44,15 +44,16 @@ class SousChef:
         'redis': ['connection_string', 'key_ttl']
     }
 
-    def __init__(self, repo_path: str, feast_config: Optional[Dict] = None, check_dirs: bool = True, log_level: str = "INFO"):
+    def __init__(self, repo_path: str, feast_config: Dict, metadata_rules: Dict, check_dirs: bool = True, log_level: str = "INFO"):
         """
-        Initialize SousChef with a Feast repository path and optional config.
+        Initialize SousChef with a Feast repository path and configs.
         
         Args:
             repo_path (str): Path to the Feast feature repository
-            feast_config (Optional[Dict]): Feast configuration dictionary
+            feast_config (Dict): Required Feast configuration dictionary
+            metadata_rules (Dict): Required metadata validation rules
             check_dirs (bool): Whether to verify directory structure exists
-            log_level (str): Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+            log_level (str): Logging level
         """
         # Configure logging for sous_chef only
         logger.handlers = []  # Clear any existing handlers
@@ -68,8 +69,14 @@ class SousChef:
         
         logger.debug(f"Initializing SousChef with repo_path: {repo_path}")
         self.repo_path = Path(repo_path)
+        self.metadata_rules = metadata_rules
         feature_repo = self.repo_path / "feature_repo"
         
+        if not feast_config:
+            raise ValueError("feast_config is required")
+        if not metadata_rules:
+            raise ValueError("metadata_rules is required")
+            
         if check_dirs:
             if not feature_repo.exists():
                 feature_repo.mkdir(parents=True)
@@ -179,6 +186,12 @@ class SousChef:
         if 'feature_views' not in config:
             raise ValueError("No feature_views section found in YAML")
         
+        # Validate config with metadata rules
+        validator = ConfigValidator(metadata_rules=self.metadata_rules)
+        errors = validator.validate(config)
+        if errors:
+            raise ValueError(f"Configuration validation failed:\n" + "\n".join(errors))
+
         # Create feature views
         feature_views = {}
         logger.info(f"Creating feature views from {yaml_path}")
@@ -196,22 +209,25 @@ class SousChef:
                 entity = self.store.get_entity(entity_name)
                 entity_objects.append(entity)
             
-            # Convert dtype strings to actual types
-            schema = [
-                Field(
-                    name=f['name'], 
+            # Convert schema with tags
+            schema = []
+            for f in spec['schema']:
+                field = Field(
+                    name=f['name'],
                     dtype=self.DTYPE_MAP[f['dtype']]
-                ) 
-                for f in spec['schema']
-            ]
-            
-            # Create feature view
+                )
+                if 'tags' in f:
+                    field.tags = f['tags']
+                schema.append(field)
+
+            # Create feature view with tags
             feature_view = FeatureView(
                 name=name,
                 entities=entity_objects,
                 ttl=timedelta(days=spec.get('ttl_days', 1)),
                 source=source,
-                schema=schema
+                schema=schema,
+                tags=spec.get('tags', {})
             )
             
             feature_views[name] = feature_view

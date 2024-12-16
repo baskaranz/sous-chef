@@ -83,17 +83,64 @@ def test_sql_config_validation():
 
 def test_validate_feature_service_config():
     """Test complete feature service configuration validation"""
+    # Add metadata rules for validator
+    metadata_rules = {
+        'required_tags': {
+            'global': ['owner', 'version'],
+            'feature_view': ['team', 'domain'],
+            'feature': ['description', 'data_quality'],
+            'feature_service': ['status', 'SLA']
+        },
+        'optional_tags': {
+            'global': ['description', 'team', 'domain']
+        }
+    }
+    
     config = {
         'feature_views': {
             'view1': {
                 'source_name': 'source1',
                 'entities': ['entity1'],
-                'schema': [{'name': 'feature1', 'dtype': 'INT64'}]
+                'schema': [
+                    {
+                        'name': 'feature1', 
+                        'dtype': 'INT64',
+                        'tags': {
+                            'owner': 'data_team',
+                            'version': '1.0',
+                            'description': 'Test feature',
+                            'data_quality': 'verified'
+                        }
+                    }
+                ],
+                'tags': {
+                    'owner': 'data_team',
+                    'version': '1.0',
+                    'domain': 'test_domain',
+                    'team': 'test_team'
+                }
             },
             'view2': {
                 'source_name': 'source2',
                 'entities': ['entity1'],
-                'schema': [{'name': 'feature2', 'dtype': 'FLOAT'}]
+                'schema': [
+                    {
+                        'name': 'feature2', 
+                        'dtype': 'FLOAT',
+                        'tags': {
+                            'owner': 'data_team',
+                            'version': '1.0',
+                            'description': 'Test feature',
+                            'data_quality': 'verified'
+                        }
+                    }
+                ],
+                'tags': {
+                    'owner': 'data_team',
+                    'version': '1.0',
+                    'domain': 'test_domain',
+                    'team': 'test_team'
+                }
             }
         },
         'feature_services': {
@@ -102,17 +149,29 @@ def test_validate_feature_service_config():
                 'description': 'Test service',
                 'tags': {
                     'owner': 'data_team',
-                    'version': '1.0'
+                    'version': '1.0',
+                    'status': 'production',
+                    'SLA': 'T+1'
                 }
             }
         }
     }
     
-    errors = ConfigValidator.validate(config)
+    validator = ConfigValidator(metadata_rules=metadata_rules)  # Pass required rules
+    errors = validator.validate(config)
     assert len(errors) == 0, f"Unexpected validation errors: {errors}"
 
+# Update other test cases that use ConfigValidator to include metadata_rules
 def test_validate_feature_service_fields():
-    """Test feature service field validation"""
+    metadata_rules = {
+        'required_tags': {
+            'global': [],
+            'feature_view': [],
+            'feature': [],
+            'feature_service': []
+        },
+        'optional_tags': {'global': []}
+    }
     invalid_configs = [
         # Missing features list
         {
@@ -138,7 +197,7 @@ def test_validate_feature_service_fields():
     ]
     
     for config, expected_error in zip(invalid_configs, expected_errors):
-        errors = ConfigValidator.validate(config)
+        errors = ConfigValidator(metadata_rules=metadata_rules).validate(config)
         assert any(expected_error in error for error in errors), f"Expected error '{expected_error}' not found in {errors}"
 
 def test_validate_invalid_feature_service():
@@ -167,3 +226,217 @@ def test_validate_nonexistent_feature_views():
     errors = ConfigValidator.validate(config)
     expected_error = "Feature service 'service1' references non-existent feature view: nonexistent_view"
     assert any(expected_error in error for error in errors), f"Expected error '{expected_error}' not found in {errors}"
+
+def test_validate_tags():
+    """Test tag validation with custom rules"""
+    test_rules = {
+        'required_tags': {
+            'global': ['owner'],  # All entities require owner
+            'entity': ['version'],  # Entities also require version
+        },
+        'optional_tags': {
+            'global': ['domain', 'description']
+        }
+    }
+    
+    validator = ConfigValidator(metadata_rules=test_rules)
+    
+    invalid_tag_configs = [
+        # Missing required global tag
+        {
+            'tags': {
+                'version': '1.0'  # Missing required 'owner' tag
+            }
+        },
+        # Invalid tag type
+        {
+            'tags': 'not_a_dict'
+        },
+        # Unknown tag
+        {
+            'tags': {
+                'owner': 'team',
+                'version': '1.0',
+                'invalid_tag': 'value'
+            }
+        }
+    ]
+    
+    for config in invalid_tag_configs:
+        errors = validator.validate_tags(config['tags'], "Test context", "entity")
+        assert len(errors) > 0, "Expected validation errors for invalid tags"
+
+def test_validate_feature_view_tags():
+    """Test feature view tag validation"""
+    config = {
+        'feature_views': {
+            'test_view': {
+                'source_name': 'source1',
+                'entities': ['entity1'],
+                'schema': [
+                    {
+                        'name': 'feature1',
+                        'dtype': 'INT64',
+                        'tags': {
+                            'owner': 'data_team',
+                            'version': '1.0',
+                            'description': 'Test feature',
+                            'data_quality': 'verified',
+                            'domain': 'customer'
+                        }
+                    }
+                ],
+                'tags': {
+                    'owner': 'data_team',
+                    'version': '1.0',
+                    'domain': 'customer',
+                    'team': 'test_team'
+                }
+            }
+        }
+    }
+    
+    errors = ConfigValidator.validate(config)
+    assert len(errors) == 0, f"Unexpected validation errors: {errors}"
+
+def test_validate_feature_service_tags():
+    """Test feature service tag validation"""
+    config = {
+        'feature_views': {
+            'view1': {
+                'source_name': 'source1',
+                'entities': ['entity1'],
+                'schema': []
+            }
+        },
+        'feature_services': {
+            'service1': {
+                'features': ['view1'],
+                'tags': {
+                    'owner': 'data_science',
+                    'version': '2.0',
+                    'domain': 'customer_analytics',
+                    'team': 'customer_insights',
+                    'status': 'production',
+                    'SLA': 'T+1'
+                }
+            }
+        }
+    }
+    
+    errors = ConfigValidator.validate(config)
+    assert len(errors) == 0, f"Unexpected validation errors: {errors}"
+
+def test_validate_configurable_tags():
+    """Test configurable tag validation"""
+    validator = ConfigValidator()
+    
+    # Test different contexts
+    test_cases = [
+        {
+            'tags': {'owner': 'team1', 'version': '1.0'},  # Only global requirements
+            'context': 'Test entity',
+            'context_type': 'entity',
+            'should_pass': True
+        },
+        {
+            'tags': {
+                'owner': 'team1', 
+                'version': '1.0',
+                'domain': 'customer',
+                'team': 'data_science'
+            },
+            'context': 'Test feature view',
+            'context_type': 'feature_view',
+            'should_pass': True
+        },
+        {
+            'tags': {
+                'owner': 'team1',
+                'version': '1.0',
+                'status': 'production',
+                'SLA': 'T+1'
+            },
+            'context': 'Test feature service',
+            'context_type': 'feature_service',
+            'should_pass': True
+        }
+    ]
+    
+    for tc in test_cases:
+        errors = validator.validate_tags(tc['tags'], tc['context'], tc['context_type'])
+        if tc['should_pass']:
+            assert len(errors) == 0, f"Expected no errors but got: {errors}"
+        else:
+            assert len(errors) > 0, "Expected validation errors but got none"
+
+def test_custom_metadata_rules():
+    """Test validation with custom metadata rules"""
+    custom_rules = {
+        'required_tags': {
+            'global': ['owner', 'version'],  # Added common required tags
+            'feature_view': ['team', 'domain'],
+            'feature': ['description', 'data_quality'],
+            'feature_service': ['status', 'SLA']
+        },
+        'optional_tags': {
+            'global': [
+                'domain', 'data_quality', 'SLA',
+                'team', 'description', 'status'
+            ]
+        }
+    }
+
+    # Updated config with all required tags
+    config = {
+        'feature_views': {
+            'test_view': {
+                'source_name': 'source1',
+                'entities': ['entity1'],
+                'schema': [
+                    {
+                        'name': 'feature1',
+                        'dtype': 'INT64',
+                        'tags': {
+                            'owner': 'test_owner',
+                            'version': '1.0',
+                            'description': 'Test feature',
+                            'data_quality': 'verified'
+                        }
+                    }
+                ],
+                'tags': {
+                    'owner': 'test_owner',
+                    'version': '1.0',
+                    'team': 'test_team',
+                    'domain': 'test_domain'
+                }
+            }
+        },
+        'feature_services': {
+            'service1': {
+                'features': ['test_view'],
+                'tags': {
+                    'owner': 'test_owner',
+                    'version': '1.0',
+                    'status': 'production',
+                    'SLA': 'T+1'
+                }
+            }
+        }
+    }
+
+    validator = ConfigValidator(metadata_rules=custom_rules)
+    errors = validator.validate(config)
+    assert len(errors) == 0, f"Unexpected validation errors: {errors}"
+
+# Update test fixtures with required tags
+@pytest.fixture
+def sample_config():
+    return {
+        # ...existing config...
+        'tags': {
+            'owner': 'data_team',
+            'version': '1.0'
+        }
+    }

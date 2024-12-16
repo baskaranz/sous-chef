@@ -1,0 +1,8 @@
+offline_store:
+  type: file
+online_store:
+  path: /Users/baskaran/Work/sous-chef-v2/sous-chef/examples/retail_feature_store/data/online_store.db
+  type: sqlite
+project: retail_feature_store
+provider: local
+registry: /Users/baskaran/Work/sous-chef-v2/sous-chef/examples/retail_feature_store/data/registry.db

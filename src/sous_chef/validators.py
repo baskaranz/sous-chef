@@ -1,5 +1,8 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 from enum import Enum
+import yaml
+from pathlib import Path
+from typing import Dict, List, Set
 
 class ValidationErrorCode(Enum):
     """Enumeration of possible validation error codes"""
@@ -162,11 +165,59 @@ class SQLValidator:
         return [col for col in columns if col]  # Filter out empty strings
 
 class ConfigValidator:
-    """Basic configuration validator"""
-    
+    def __init__(self, metadata_rules: Optional[Dict] = None):
+        """Initialize validator with optional custom metadata rules"""
+        if metadata_rules:
+            self.metadata_rules = metadata_rules
+        else:
+            rules_path = Path(__file__).parent / "config" / "metadata_rules.yaml"
+            with open(rules_path) as f:
+                self.metadata_rules = yaml.safe_load(f)['metadata_rules']
+
+    def _get_required_tags(self, context_type: str) -> Set[str]:
+        """Get required tags for a specific context"""
+        rules = self.metadata_rules['required_tags']
+        # Get global and context-specific required tags
+        global_tags = set(rules.get('global', []))
+        context_tags = set(rules.get(context_type, []))
+        return global_tags | context_tags
+
+    def _get_allowed_tags(self, context_type: str) -> Set[str]:
+        """Get all allowed tags for a context"""
+        # Start with optional tags
+        allowed = set(self.metadata_rules['optional_tags'].get('global', []))
+        # Add all required tags as allowed
+        for section in self.metadata_rules['required_tags'].values():
+            allowed.update(section)
+        return allowed
+
+    def validate_tags(self, tags: Dict, context: str, context_type: str) -> List[str]:
+        """Validate tags structure and content"""
+        if not isinstance(tags, dict):
+            return [f"{context}: tags must be a dictionary"]
+
+        # Get required and allowed tags
+        required_tags = self._get_required_tags(context_type)
+        allowed_tags = self._get_allowed_tags(context_type)
+
+        errors = []
+        
+        # Check for invalid tags first
+        invalid = set(tags.keys()) - allowed_tags
+        if invalid:
+            errors.append(f"{context}: unsupported tags found: {invalid}")
+
+        # Check for missing required tags
+        missing = required_tags - set(tags.keys())
+        if missing:
+            errors.append(f"{context}: missing required tags: {missing}")
+            
+        return errors
+
     @classmethod
-    def validate(cls, config: Dict) -> List[str]:
-        """Basic config validation"""
+    def validate(cls, config: Dict, metadata_rules: Optional[Dict] = None) -> List[str]:
+        """Validate configuration with optional custom metadata rules"""
+        validator = cls(metadata_rules=metadata_rules)
         errors = []
         
         if not isinstance(config, dict):
@@ -189,6 +240,23 @@ class ConfigValidator:
                 if missing:
                     errors.append(f"Feature view '{name}' missing required fields: {missing}")
                     
+                if 'tags' in view_config:
+                    errors.extend(validator.validate_tags(
+                        view_config['tags'],
+                        f"Feature view '{name}'",
+                        'feature_view'
+                    ))
+                    
+                # Validate feature-level tags
+                if 'schema' in view_config:
+                    for feature in view_config['schema']:
+                        if 'tags' in feature:
+                            errors.extend(validator.validate_tags(
+                                feature['tags'],
+                                f"Feature '{feature['name']}' in view '{name}'",
+                                'feature'
+                            ))
+
         # Validate feature services section
         if 'feature_services' in config:
             for name, service_config in config['feature_services'].items():
@@ -217,4 +285,11 @@ class ConfigValidator:
                         if view_name not in config.get('feature_views', {}):
                             errors.append(f"Feature service '{name}' references non-existent feature view: {view_name}")
                             
+                if 'tags' in service_config:
+                    errors.extend(validator.validate_tags(
+                        service_config['tags'],
+                        f"Feature service '{name}'",
+                        'feature_service'
+                    ))
+
         return errors
