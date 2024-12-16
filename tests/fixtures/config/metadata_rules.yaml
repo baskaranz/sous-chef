@@ -1,0 +1,29 @@
+minimal:
+  required_tags: 
+    global: []
+    feature_view: []
+    feature: []
+    feature_service: []
+  optional_tags:
+    global: []
+
+complex:
+  required_tags:
+    global: ['owner', 'version']
+    feature_view: ['team', 'data_quality']
+    feature: ['description', 'data_quality']
+    feature_service: ['status', 'SLA']
+  optional_tags:
+    global: ['description', 'domain']
+    feature_view: ['description', 'domain']
+    feature: ['domain']
+    feature_service: ['description', 'domain']
+
+standard:
+  required_tags:
+    global: ['owner', 'version']
+    feature_view: ['team']
+    feature: ['description']
+    feature_service: ['status']
+  optional_tags:
+    global: ['domain']

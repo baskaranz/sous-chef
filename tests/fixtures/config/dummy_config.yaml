@@ -1,0 +1,5 @@
+project: test
+registry: registry.db
+provider: local
+online_store:
+  type: sqlite

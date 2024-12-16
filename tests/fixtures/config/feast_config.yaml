@@ -1,0 +1,12 @@
+project: test_project
+registry: data/registry.db
+provider: local
+entities:
+  - name: driver_id
+    join_key: driver_id
+    description: test driver
+data_sources:
+  driver_source:
+    type: file
+    path: data/test.parquet
+    timestamp_field: event_timestamp

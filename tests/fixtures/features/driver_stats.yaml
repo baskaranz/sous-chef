@@ -1,0 +1,10 @@
+feature_views:
+  driver_stats:
+    source_name: driver_source
+    entities: [driver_id]
+    ttl_days: 1
+    schema:
+      - name: trips_today
+        dtype: INT64
+      - name: rating
+        dtype: FLOAT

@@ -1,0 +1,4 @@
+file_source:
+  path: test.parquet
+  timestamp_field: event_ts
+  invalid_param: value

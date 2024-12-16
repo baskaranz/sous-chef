@@ -1,0 +1,11 @@
+feature_repo:
+  features.yaml: {}
+feast_config:
+  project: test_project
+  provider: local
+  registry: data/registry.db
+  offline_store:
+    type: file
+  online_store:
+    type: sqlite
+    path: data/online_store.db
