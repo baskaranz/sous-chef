@@ -18,9 +18,6 @@ A simplified feature store management system built on top of Feast, with advance
 ## Installation
 
 ```bash
-# From PyPI
-pip install sous-chef
-
 # From source
 git clone https://github.com/your-org/sous-chef.git
 cd sous-chef

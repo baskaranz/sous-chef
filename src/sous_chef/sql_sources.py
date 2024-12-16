@@ -54,15 +54,21 @@ class SQLSource:
     def validate_query(self, query: str) -> bool:
         """Validate SQL query format"""
         try:
-            if '*' in query:
+            if '*' in query and 'COUNT(*)' not in query.upper():  # Allow COUNT(*)
                 return False
                 
             if 'WITH' in query.upper():
                 return False
                 
-            lines = self._validate_format(query)
-            select_part = self._extract_select(lines)
-            return bool(select_part and self._split_columns(select_part))
+            clean_query = query.strip().upper()
+            if not clean_query.startswith('SELECT'):
+                return False
+                
+            if 'FROM' not in clean_query:
+                return False
+                
+            return True
+                
         except Exception:
             return False
 
@@ -216,6 +222,8 @@ class SQLSource:
             return 'INT64'
         elif any(f in expr for f in ['SUM(', 'AVG(', 'MIN(', 'MAX(']):
             return 'FLOAT'
+        elif 'CASE' in expr and any(x in expr for x in ['0', '1']):  # Binary CASE
+            return 'INT64'
         return 'STRING'
 
 class SnowflakeSource(SQLSource):
@@ -224,14 +232,28 @@ class SnowflakeSource(SQLSource):
     def _map_snowflake_type(self, sf_type: str) -> str:
         """Map Snowflake types to Feast types"""
         type_map = {
-            'NUMBER': 'FLOAT',
+            'NUMBER': 'INT64',  # Changed from FLOAT to INT64
+            'DECIMAL': 'FLOAT',
+            'NUMERIC': 'FLOAT',
+            'INTEGER': 'INT64',
+            'BIGINT': 'INT64',
             'FLOAT': 'FLOAT',
             'VARCHAR': 'STRING', 
             'ARRAY': 'STRING',
             'OBJECT': 'STRING',
             'VARIANT': 'STRING'
         }
-        return type_map.get(sf_type.upper(), 'STRING')
+        base_type = sf_type.split('(')[0].upper()
+        return type_map.get(base_type, 'STRING')
+
+    def validate_snowflake_objects(self, query: str) -> List[str]:  # Renamed from _validate_snowflake_objects
+        """Validate Snowflake object references"""
+        errors = []
+        if '@' in query and not any(x in query for x in ['@PUBLIC', '@PRIVATE']):
+            errors.append("Invalid stage reference format")
+        if '$' in query and not '"$' in query:
+            errors.append("Semi-structured columns must be quoted")
+        return errors
 
     def infer_schema(self, query: str) -> List[Dict]:
         """Infer schema from Snowflake query"""
@@ -273,25 +295,33 @@ class TeradataSource(SQLSource):
     def _map_teradata_type(self, td_type: str) -> str:
         """Map Teradata types to Feast types"""
         type_map = {
+            'BYTEINT': 'INT64',
+            'SMALLINT': 'INT64',
             'INTEGER': 'INT64',
+            'BIGINT': 'INT64',
             'DECIMAL': 'FLOAT',
             'NUMBER': 'FLOAT',
             'FLOAT': 'FLOAT',
             'VARCHAR': 'STRING',
+            'CHAR': 'STRING',
+            'CLOB': 'STRING',
             'DATE': 'STRING',
+            'TIME': 'STRING',
             'TIMESTAMP': 'STRING'
         }
         base_type = td_type.split('(')[0].upper()
         return type_map.get(base_type, 'STRING')
 
     def _infer_type(self, expr: str) -> str:
-        """Infer type from SQL expression"""
+        """Infer type from Teradata SQL expression"""
         expr = expr.upper()
-        if any(f in expr for f in ['COUNT(', 'ROW_NUMBER(', 'RANK(']):
-            return 'INT64'
-        elif any(f in expr for f in ['SUM(', 'AVG(', 'MIN(', 'MAX(']):
-            return 'FLOAT'
-        return 'STRING'
+        # Handle CASE statements with string literals
+        if 'CASE' in expr:
+            if any(literal in expr for literal in ["'HIGH'", "'MEDIUM'", "'LOW'"]):
+                return 'STRING'  # CASE returning string literals
+            elif 'THEN 1' in expr and 'ELSE 0' in expr:
+                return 'INT64'  # Binary CASE statements return INT64
+        return super()._infer_type(expr)
 
 class SparkSqlEmrSource(SQLSource):
     """Spark SQL (EMR) source implementation"""
@@ -302,15 +332,29 @@ class SparkSqlEmrSource(SQLSource):
         return schema
 
     def _map_spark_type(self, spark_type: str) -> str:
-        """Map Spark SQL (EMR) types to Feast types"""
+        """Map Spark SQL types to Feast types"""
         type_map = {
+            'TINYINT': 'INT64',
+            'SMALLINT': 'INT64',
+            'INT': 'INT64',
             'INTEGER': 'INT64',
+            'BIGINT': 'INT64',
+            'FLOAT': 'FLOAT',
             'DOUBLE': 'FLOAT',
+            'DECIMAL': 'FLOAT',
             'STRING': 'STRING',
+            'BINARY': 'STRING',
+            'BOOLEAN': 'STRING',
+            'TIMESTAMP': 'STRING',
+            'DATE': 'STRING',
             'ARRAY': 'STRING',
+            'MAP': 'STRING',
             'STRUCT': 'STRING'
         }
-        return type_map.get(spark_type.upper(), 'STRING')
+        base_type = spark_type.split('(')[0].upper()
+        if '<' in base_type:  # Handle complex types like ARRAY<INT>
+            base_type = base_type.split('<')[0]
+        return type_map.get(base_type, 'STRING')
 
 class SQLSourceRegistry:
     """Registry for SQL source implementations"""

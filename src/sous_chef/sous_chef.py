@@ -9,7 +9,7 @@ import logging
 from feast import FeatureStore, Feature, FeatureView, ValueType, Field, Entity, FeatureService
 from feast.types import Float32, Int64
 
-from sous_chef.sql_sources import SQLSourceRegistry
+from sous_chef.sql_sources import SQLSourceRegistry, SQLSource
 
 from .errors import SousChefError
 from .validators import ConfigValidator
@@ -277,3 +277,167 @@ class SousChef:
             table=config.get('table'),
             timestamp_field=config['timestamp_field']
         )
+
+class TeradataSource(SQLSource):
+    """Teradata SQL source implementation"""
+    
+    def validate_query(self, query: str) -> bool:
+        """Validate Teradata SQL query format"""
+        try:
+            query = query.strip().upper()
+            
+            # Teradata specific validations
+            if any(keyword in query for keyword in [
+                'FASTLOAD', 'MULTILOAD', '.LABEL', '.LOGON', 
+                'DIAGNOSTIC', 'CHECKPOINT'
+            ]):
+                return False
+                
+            # Validate Teradata specific functions
+            td_functions = ['QUALIFY', 'EXPAND ON', 'COLLECT STATISTICS']
+            if any(func in query for func in td_functions):
+                logger.warning(f"Query contains Teradata-specific functions: {query}")
+                
+            return super().validate_query(query)
+            
+        except Exception:
+            return False
+
+    def _map_teradata_type(self, td_type: str) -> str:
+        """Map Teradata types to Feast types"""
+        type_map = {
+            'BYTEINT': 'INT64',
+            'SMALLINT': 'INT64',
+            'INTEGER': 'INT64',
+            'BIGINT': 'INT64',
+            'DECIMAL': 'FLOAT',
+            'NUMBER': 'FLOAT',
+            'FLOAT': 'FLOAT',
+            'VARCHAR': 'STRING',
+            'CHAR': 'STRING',
+            'CLOB': 'STRING',
+            'DATE': 'STRING',
+            'TIME': 'STRING',
+            'TIMESTAMP': 'STRING'
+        }
+        base_type = td_type.split('(')[0].upper()
+        return type_map.get(base_type, 'STRING')
+
+class SparkSqlEmrSource(SQLSource):
+    """Spark SQL (EMR) source implementation"""
+    
+    def validate_query(self, query: str) -> bool:
+        """Validate Spark SQL query format"""
+        try:
+            query = query.strip().upper()
+            
+            # EMR/Hive specific validations
+            if any(keyword in query for keyword in [
+                'ADD JAR', 'ADD FILE', 'SET LOCATION',
+                'CLUSTERED BY', 'SKEWED BY', 'STORED AS'
+            ]):
+                return False
+                
+            # Check for unsupported Hive features
+            hive_features = ['DISTRIBUTE BY', 'SORT BY', 'CLUSTER BY']
+            if any(feature in query for feature in hive_features):
+                logger.warning(f"Query contains Hive-specific features: {query}")
+                
+            return super().validate_query(query)
+            
+        except Exception:
+            return False
+
+    def _map_spark_type(self, spark_type: str) -> str:
+        """Map Spark SQL types to Feast types"""
+        type_map = {
+            'TINYINT': 'INT64',
+            'SMALLINT': 'INT64',
+            'INT': 'INT64',
+            'BIGINT': 'INT64',
+            'FLOAT': 'FLOAT',
+            'DOUBLE': 'FLOAT',
+            'DECIMAL': 'FLOAT',
+            'STRING': 'STRING',
+            'BINARY': 'STRING',
+            'BOOLEAN': 'STRING',
+            'TIMESTAMP': 'STRING',
+            'DATE': 'STRING',
+            'ARRAY': 'STRING',
+            'MAP': 'STRING',
+            'STRUCT': 'STRING'
+        }
+        base_type = spark_type.split('<')[0].upper()  # Handle complex types
+        return type_map.get(base_type, 'STRING')
+
+class SnowflakeSource(SQLSource):
+    """Snowflake SQL source implementation"""
+    
+    def validate_query(self, query: str) -> bool:
+        """Validate Snowflake SQL query format"""
+        try:
+            query = query.strip().upper()
+            
+            # Snowflake specific validations
+            if any(keyword in query for keyword in [
+                'CREATE WAREHOUSE', 'USE WAREHOUSE', 
+                'ALTER SESSION', 'ALTER WAREHOUSE',
+                'COPY INTO', 'PUT', 'GET'
+            ]):
+                return False
+                
+            # Validate Snowflake specific functions
+            sf_functions = ['FLATTEN', 'LATERAL', 'GENERATE_COLUMN_DESCRIPTION']
+            if any(func in query for func in sf_functions):
+                logger.warning(f"Query contains Snowflake-specific functions: {query}")
+                
+            # Check for semi-structured data patterns
+            if any(pattern in query for pattern in ['::', '->', '$']):
+                logger.warning("Query contains semi-structured data access patterns")
+                
+            return super().validate_query(query)
+            
+        except Exception:
+            return False
+
+    def _map_snowflake_type(self, sf_type: str) -> str:
+        """Map Snowflake types to Feast types"""
+        type_map = {
+            'NUMBER': 'INT64',
+            'DECIMAL': 'FLOAT',
+            'NUMERIC': 'FLOAT',
+            'INTEGER': 'INT64',
+            'BIGINT': 'INT64',
+            'FLOAT': 'FLOAT',
+            'DOUBLE': 'FLOAT',
+            'REAL': 'FLOAT',
+            'VARCHAR': 'STRING',
+            'CHAR': 'STRING',
+            'STRING': 'STRING',
+            'TEXT': 'STRING',
+            'BINARY': 'STRING',
+            'BOOLEAN': 'STRING',
+            'DATE': 'STRING',
+            'DATETIME': 'STRING',
+            'TIMESTAMP': 'STRING',
+            'TIMESTAMP_NTZ': 'STRING',
+            'TIMESTAMP_LTZ': 'STRING',
+            'TIMESTAMP_TZ': 'STRING',
+            'TIME': 'STRING',
+            'VARIANT': 'STRING',
+            'OBJECT': 'STRING',
+            'ARRAY': 'STRING',
+            'GEOGRAPHY': 'STRING'
+        }
+        base_type = sf_type.split('(')[0].upper()
+        return type_map.get(base_type, 'STRING')
+
+    def _validate_snowflake_objects(self, query: str) -> List[str]:
+        """Validate Snowflake object references"""
+        errors = []
+        # Check for proper object referencing
+        if '@' in query and not any(x in query for x in ['@PUBLIC', '@PRIVATE']):  # Fixed syntax
+            errors.append("Invalid stage reference format")
+        if '$' in query and not '"$' in query:
+            errors.append("Semi-structured columns must be quoted")
+        return errors

@@ -1,6 +1,10 @@
 import pytest
 from sous_chef.sql_sources import SQLSource, SQLSourceRegistry
 
+@pytest.fixture
+def base_sql_source():
+    return SQLSource()
+
 def test_sql_source_registry():
     """Test SQL source registry functionality"""
     source_class = SQLSourceRegistry.get_source_class('snowflake')
@@ -106,3 +110,51 @@ def test_column_parsing():
     
     # Complex expressions
     assert source._parse_column("CASE WHEN amount > 100 THEN 'high' ELSE 'low' END AS category") == ("CATEGORY", "CASE WHEN AMOUNT > 100 THEN 'HIGH' ELSE 'LOW' END")
+
+def test_base_sql_validation():
+    """Test base SQL validation rules"""
+    source = SQLSource()
+    
+    # Valid queries
+    assert source.validate_query("SELECT col1, col2 FROM table")
+    assert source.validate_query("""
+        SELECT 
+            COUNT(*) as count,
+            SUM(amount) as total
+        FROM table
+        GROUP BY date
+    """)
+    
+    # Invalid queries
+    assert not source.validate_query("SELECT * FROM table")
+    assert not source.validate_query("WITH cte AS (SELECT 1) SELECT * FROM cte")
+    assert not source.validate_query("INSERT INTO table VALUES (1)")
+
+def test_sql_column_parsing():
+    """Test SQL column name parsing"""
+    source = SQLSource()
+    
+    # Test simple columns
+    assert source._parse_column("column1") == ("COLUMN1", "COLUMN1")
+    
+    # Test aliased columns
+    assert source._parse_column("sum(amount) as total") == ("TOTAL", "SUM(AMOUNT)")
+    
+    # Test complex expressions
+    assert source._parse_column("CASE WHEN x > 0 THEN 1 ELSE 0 END as flag") == ("FLAG", "CASE WHEN X > 0 THEN 1 ELSE 0 END")
+
+def test_sql_type_inference():
+    """Test SQL type inference"""
+    source = SQLSource()
+    
+    # Test aggregates
+    assert source._infer_type("COUNT(*)") == "INT64"
+    assert source._infer_type("SUM(amount)") == "FLOAT"
+    assert source._infer_type("AVG(price)") == "FLOAT"
+    
+    # Test window functions
+    assert source._infer_type("ROW_NUMBER()") == "INT64"
+    assert source._infer_type("RANK()") == "INT64"
+    
+    # Default type
+    assert source._infer_type("some_column") == "STRING"

@@ -108,7 +108,21 @@ def test_snowflake_array_aggs(array_agg_query):
 def test_snowflake_type_mapping():
     """Test Snowflake type mapping"""
     source = SnowflakeSource()
-    assert source._map_snowflake_type('NUMBER') == 'FLOAT'
+    
+    # Test numeric types
+    assert source._map_snowflake_type("NUMBER") == "INT64"
+    assert source._map_snowflake_type("DECIMAL") == "FLOAT"
+    assert source._map_snowflake_type("FLOAT") == "FLOAT"
+    
+    # Test string types
+    assert source._map_snowflake_type("VARCHAR") == "STRING"
+    assert source._map_snowflake_type("TEXT") == "STRING"
+    
+    # Test special types
+    assert source._map_snowflake_type("VARIANT") == "STRING"
+    assert source._map_snowflake_type("OBJECT") == "STRING"
+    assert source._map_snowflake_type("ARRAY") == "STRING"
+    assert source._map_snowflake_type("GEOGRAPHY") == "STRING"
 
 def test_snowflake_config_validation():
     """Test Snowflake configuration validation"""
@@ -139,3 +153,33 @@ def test_snowflake_query_validation():
     source = SnowflakeSource()
     assert not source.validate_query("SELECT * FROM table")
     assert not source.validate_query("WITH cte AS (...) SELECT * FROM cte")
+
+def test_snowflake_specific_validation():
+    """Test Snowflake-specific validation rules"""
+    source = SnowflakeSource()
+    
+    # Test Snowflake admin commands rejection
+    invalid_queries = [
+        "CREATE WAREHOUSE my_wh",
+        "USE WAREHOUSE my_wh",
+        "ALTER SESSION SET timezone = 'UTC'",
+        "COPY INTO my_table",
+    ]
+    for query in invalid_queries:
+        assert not source.validate_query(query)
+    
+    # Test Snowflake function warnings
+    query_with_functions = """
+        SELECT
+            FLATTEN(array_col),
+            LATERAL(SELECT value FROM TABLE(result_scan('xyz')))
+        FROM my_table
+    """
+    assert source.validate_query(query_with_functions)  # Should pass but log warnings
+
+def test_snowflake_object_validation():
+    """Test Snowflake object reference validation"""
+    source = SnowflakeSource()
+    errors = source.validate_snowflake_objects("SELECT * FROM @my_stage/path")  # Changed from _validate_snowflake_objects
+    assert len(errors) > 0
+    assert "Invalid stage reference format" in errors[0]

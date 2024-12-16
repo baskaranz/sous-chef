@@ -61,6 +61,22 @@ def array_agg_query():
     GROUP BY user_id
     """
 
+@pytest.fixture
+def complex_emr_query():
+    return """
+    SELECT 
+        c.customer_id,
+        COUNT(DISTINCT o.order_id) as order_count,
+        SUM(o.amount) as total_amount,
+        percentile_approx(o.amount, 0.5) as median_amount,
+        collect_list(DISTINCT p.category) as categories
+    FROM customers c
+    LEFT JOIN orders o ON c.customer_id = o.customer_id
+    LEFT JOIN products p ON o.product_id = p.product_id
+    WHERE o.order_date >= date_sub(current_date(), 90)
+    GROUP BY c.customer_id
+    """
+
 def test_spark_emr_complex_query(complex_spark_emr_query):
     """Test complex Spark EMR query validation"""
     config = {
@@ -121,3 +137,70 @@ def test_spark_emr_query_validation():
     source = SparkSqlEmrSource()
     assert not source.validate_query("SELECT * FROM table")
     assert not source.validate_query("WITH cte AS (...) SELECT * FROM cte")
+
+def test_emr_query_validation():
+    """Test EMR query validation rules"""
+    source = SparkSqlEmrSource()
+    
+    # Invalid EMR-specific commands
+    invalid_queries = [
+        "ADD JAR s3://my-bucket/udf.jar",
+        "SET LOCATION 's3://bucket/path'",
+        "SELECT * FROM table CLUSTERED BY (id)",
+        "SELECT * FROM table DISTRIBUTE BY id"
+    ]
+    for query in invalid_queries:
+        assert not source.validate_query(query), f"Should reject: {query}"
+
+def test_emr_schema_inference():
+    """Test EMR schema inference"""
+    source = SparkSqlEmrSource()
+    schema = source.infer_schema("""
+        SELECT 
+            COUNT(*) as event_count,
+            SUM(amount) as total_amount,
+            collect_set(category) as unique_categories
+        FROM events
+    """)
+    
+    expected_types = {
+        'EVENT_COUNT': 'INT64',
+        'TOTAL_AMOUNT': 'FLOAT',
+        'UNIQUE_CATEGORIES': 'STRING'  # Arrays converted to strings
+    }
+    
+    assert {f['name']: f['dtype'] for f in schema} == expected_types
+
+def test_emr_complex_query(complex_emr_query):
+    """Test complex EMR query handling"""
+    source = SparkSqlEmrSource()
+    schema = source.infer_schema(complex_emr_query)
+    
+    # Verify all expected columns are present
+    names = {f['name'] for f in schema}
+    assert names == {'CUSTOMER_ID', 'ORDER_COUNT', 'TOTAL_AMOUNT', 
+                    'MEDIAN_AMOUNT', 'CATEGORIES'}
+    
+    # Verify types
+    types = {f['name']: f['dtype'] for f in schema}
+    assert types['ORDER_COUNT'] == 'INT64'
+    assert types['TOTAL_AMOUNT'] == 'FLOAT'
+    assert types['CATEGORIES'] == 'STRING'
+
+def test_emr_type_mapping():
+    """Test EMR type mapping"""
+    source = SparkSqlEmrSource()
+    type_tests = [
+        ('TINYINT', 'INT64'),
+        ('INT', 'INT64'),
+        ('BIGINT', 'INT64'),
+        ('DECIMAL(10,2)', 'FLOAT'),
+        ('DOUBLE', 'FLOAT'),
+        ('STRING', 'STRING'),
+        ('ARRAY<INT>', 'STRING'),
+        ('MAP<STRING,INT>', 'STRING'),
+        ('STRUCT<name:STRING,age:INT>', 'STRING')
+    ]
+    
+    for spark_type, expected_type in type_tests:
+        assert source._map_spark_type(spark_type) == expected_type
